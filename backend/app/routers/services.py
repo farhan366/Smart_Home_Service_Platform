@@ -31,7 +31,7 @@ from app.services.provider_service import profile_loader, to_card
 router = APIRouter(prefix="/services", tags=["Service Discovery"])
 
 
-# ------------------------------- Categories -------------------------------- #
+#Categories#
 @router.get("/categories", response_model=list[CategoryTree])
 def category_tree(db: Session = Depends(get_db)):
     """Full hierarchical catalog (parents with nested sub-services)."""
@@ -85,7 +85,7 @@ def delete_category(category_id: int, _: User = Depends(require_admin), db: Sess
     db.commit()
 
 
-# --------------------------------- Areas ----------------------------------- #
+#Areas#
 @router.get("/areas", response_model=list[AreaCount])
 def list_areas(db: Session = Depends(get_db)):
     """Areas where at least one searchable provider operates."""
@@ -99,7 +99,7 @@ def list_areas(db: Session = Depends(get_db)):
     return [AreaCount(area=a, city=c, provider_count=n) for a, c, n in rows]
 
 
-# --------------------------- Localized provider search --------------------- #
+#Localized provider search#
 SORTS = {
     "rating": lambda: (ProviderProfile.avg_rating.desc(), ProviderProfile.rating_count.desc()),
     "price_asc": lambda: (ProviderProfile.base_hourly_rate.asc(),),
@@ -169,7 +169,7 @@ def search_providers(
     return ProviderSearchResponse(items=[to_card(p) for p in rows], total=total, page=page, page_size=page_size)
 
 
-# ---------------------- Single Provider Public Profile --------------------- #
+#Single Provider Public Profile#
 @router.get("/providers/{provider_id}")
 def get_provider_detail(provider_id: int, db: Session = Depends(get_db)):
     """Fetch single provider's full public profile."""
@@ -197,7 +197,7 @@ def get_provider_detail(provider_id: int, db: Session = Depends(get_db)):
     return res
 
 
-# ---------------- Dynamic Slots & Double-Booking Prevention ---------------- #
+#Dynamic Slots & Double-Booking Prevention#
 DAY_NAME_MAP = {
     0: "mon", 1: "tue", 2: "wed", 3: "thu", 4: "fri", 5: "sat", 6: "sun"
 }
@@ -270,7 +270,7 @@ def get_available_slots(
     }
 
 
-# --------------------- Customer Engagement Logs ---------------------------- #
+#Customer Engagement Logs#
 @router.get("/bookings/my")
 def get_customer_booking_logs(
     customer_id: int | None = Query(None, description="Optional customer ID"),
