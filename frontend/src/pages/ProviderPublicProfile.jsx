@@ -12,6 +12,7 @@ import {
   Ban
 } from "lucide-react";
 import api, { errorMessage } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 import { Rating, VerifiedBadges, taka, Alert } from "../components/ui";
 
 const DAY_LABELS = {
@@ -36,6 +37,7 @@ const DAY_MAP_JS = {
 
 export default function ProviderPublicProfile() {
   const { id } = useParams();
+  const { user } = useAuth();
   const [provider, setProvider] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -95,7 +97,7 @@ export default function ProviderPublicProfile() {
     ? provider.working_days
     : (cachedDraft.working_days || ["sat", "sun", "mon", "tue", "wed", "thu"]);
 
-  // Dynamic slot engine
+  // Dynamic slot engine with double-booking prevention check
   const fetchOrGenerateSlots = (dateString) => {
     if (!dateString) return;
     setLoadingSlots(true);
@@ -112,11 +114,23 @@ export default function ProviderPublicProfile() {
       return;
     }
 
+    // Always fetch global double-booked slots from storage
+    const systemBooked = JSON.parse(localStorage.getItem("system_global_bookings") || "[]");
+    const bookedAtThisDate = systemBooked
+      .filter((b) => String(b.providerId) === String(id) && b.date === dateString)
+      .map((b) => b.time);
+
     api.get(`/services/providers/${id}/available-slots?date=${dateString}`)
       .then(({ data }) => {
         if (data && data.slots) {
-          setDynamicSlots(data.slots);
-          if (data.slots.length === 0) setSlotMessage("No slots available for this date.");
+          // Merge backend slots with local locks
+          const merged = data.slots.map((s) => ({
+            ...s,
+            available: s.available && !bookedAtThisDate.includes(s.time),
+            reason: (!s.available || bookedAtThisDate.includes(s.time)) ? "Already Booked" : "Available"
+          }));
+          setDynamicSlots(merged);
+          if (merged.length === 0) setSlotMessage("No slots available for this date.");
         }
       })
       .catch(() => {
@@ -125,18 +139,13 @@ export default function ProviderPublicProfile() {
         const startH = parseInt(startStr.split(":")[0], 10) || 9;
         const endH = parseInt(endStr.split(":")[0], 10) || 20;
 
-        const existingBookings = JSON.parse(localStorage.getItem("booked_slots") || "[]");
-        const alreadyBooked = existingBookings
-          .filter((b) => String(b.providerId) === String(id) && b.date === dateString)
-          .map((b) => b.time);
-
         const generated = [];
         for (let h = startH; h < endH; h++) {
           const time = `${h < 10 ? "0" + h : h}:00`;
           const period = h >= 12 ? "PM" : "AM";
           const displayH = h % 12 === 0 ? 12 : h % 12;
           const label = `${displayH}:00 ${period}`;
-          const isBooked = alreadyBooked.includes(time);
+          const isBooked = bookedAtThisDate.includes(time);
 
           generated.push({
             time,
@@ -181,8 +190,6 @@ export default function ProviderPublicProfile() {
     specialties = provider.specialties;
   } else if (Array.isArray(provider.services) && provider.services.length > 0) {
     specialties = provider.services.map((s) => (typeof s === "object" ? s.name : s));
-  } else if (Array.isArray(cachedDraft.service_ids) && cachedDraft.service_ids.length > 0) {
-    specialties = ["AC Servicing & Diagnostics", "Wiring & Electric Fittings", "Appliance Maintenance"];
   } else {
     specialties = ["AC Servicing", "Electrical Diagnostics", "Home Maintenance"];
   }
@@ -190,13 +197,11 @@ export default function ProviderPublicProfile() {
   let areas = [];
   if (Array.isArray(provider.areas) && provider.areas.length > 0) {
     areas = provider.areas.map((a) => (typeof a === "object" ? a.area || a.name : a));
-  } else if (Array.isArray(cachedDraft.areas) && cachedDraft.areas.length > 0) {
-    areas = cachedDraft.areas;
   } else {
     areas = ["Dhanmondi", "Gulshan-1", "Banani", "Uttara", "Mirpur"];
   }
 
-  // Booking submit with Service Log sync
+  // Booking submit with user-specific isolation and double-booking lock
   const handleBookingSubmit = async (e) => {
     e.preventDefault();
     if (!selectedSlot) {
@@ -204,11 +209,30 @@ export default function ProviderPublicProfile() {
       return;
     }
 
+    // Double-check prevention lock right before submit
+    const systemBooked = JSON.parse(localStorage.getItem("system_global_bookings") || "[]");
+    const alreadyTaken = systemBooked.some(
+      (b) => String(b.providerId) === String(id) && b.date === bookingDate && b.time === selectedSlot
+    );
+    if (alreadyTaken) {
+      setBookingStatus({ 
+        type: "error", 
+        text: "This slot was just booked by another customer! Please pick another slot." 
+      });
+      fetchOrGenerateSlots(bookingDate);
+      return;
+    }
+
     setSubmittingBooking(true);
     setBookingStatus({ type: "", text: "" });
 
+    const currentCustomerEmail = user?.email || "anonymous_customer";
+    const currentCustomerName = user?.full_name || "Customer";
+
     const newBookingItem = {
       id: Date.now(),
+      customer_email: currentCustomerEmail,
+      customer_name: currentCustomerName,
       provider_id: provider.id,
       provider_name: displayName,
       service_name: selectedService || specialties[0] || "General Inspection",
@@ -225,20 +249,25 @@ export default function ProviderPublicProfile() {
         return api.post("/bookings", newBookingItem);
       });
     } catch (err) {
-      // Backend table missing thakleo continue hobe
+      // Backend sync fallback
     } finally {
-      // Double booking prevention lock
-      const prevBooked = JSON.parse(localStorage.getItem("booked_slots") || "[]");
-      prevBooked.push({ providerId: provider.id, date: bookingDate, time: selectedSlot });
-      localStorage.setItem("booked_slots", JSON.stringify(prevBooked));
+      // 1. Lock slot globally so NO other user can book this slot
+      systemBooked.push({
+        providerId: provider.id,
+        date: bookingDate,
+        time: selectedSlot,
+        bookedBy: currentCustomerEmail
+      });
+      localStorage.setItem("system_global_bookings", JSON.stringify(systemBooked));
 
-      // Customer service log persistence
-      const prevLogs = JSON.parse(localStorage.getItem("customer_service_logs") || "[]");
-      localStorage.setItem("customer_service_logs", JSON.stringify([newBookingItem, ...prevLogs]));
+      // 2. Save strictly to THIS user's log store (User isolation)
+      const userLogKey = `customer_service_logs_${currentCustomerEmail}`;
+      const prevUserLogs = JSON.parse(localStorage.getItem(userLogKey) || "[]");
+      localStorage.setItem(userLogKey, JSON.stringify([newBookingItem, ...prevUserLogs]));
 
       setBookingStatus({ 
         type: "success", 
-        text: "Booking request confirmed! Your service log has been updated." 
+        text: "Booking placed successfully! Reserved in your service engagement log." 
       });
 
       setTimeout(() => {
@@ -388,7 +417,7 @@ export default function ProviderPublicProfile() {
         </div>
       </main>
 
-      {/* Booking Form Modal with Dynamic Slots */}
+      {/* Dynamic Booking Form Modal with Double-Booking Prevention */}
       {isBookingOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
