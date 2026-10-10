@@ -4,7 +4,7 @@ import enum
 from datetime import datetime, time
 from decimal import Decimal
 
-from sqlalchemy import (
+from sqlalchemy import ( 
     Boolean,
     CheckConstraint,
     DateTime,
