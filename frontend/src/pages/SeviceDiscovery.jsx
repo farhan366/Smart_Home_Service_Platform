@@ -17,13 +17,11 @@ const DEFAULT_AREAS = [
   "Mirpur", "Mohakhali", "Bashundhara R/A", "Badda", "Mohammadpur"
 ];
 
-// Rich Visual Categories including dedicated Pest Control
 const CATEGORY_CARDS = [
   {
     key: "ac",
     name: "AC Repair & Servicing",
-    // STRICT keywords: no standalone "servicing" word so other services don't match
-    matchKeywords: ["ac repair", "ac servicing", "air condition", "air conditioner", "cooling"],
+    matchKeywords: ["ac", "air condition", "cooling", "ac repair"],
     image: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=700&q=80",
     description: "Master jet cleaning, gas charging, circuit PCB fix & leakage repair.",
     badge: "Most Booked"
@@ -47,7 +45,7 @@ const CATEGORY_CARDS = [
   {
     key: "cleaning",
     name: "Deep Cleaning & Maid",
-    matchKeywords: ["deep home cleaning", "sofa & carpet", "kitchen cleaning", "water tank cleaning", "maid", "wash", "floor cleaning"],
+    matchKeywords: ["clean", "wash", "maid", "sofa", "disinfection", "kitchen cleaning", "deep home", "carpet"],
     image: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=700&q=80",
     description: "Kitchen degreasing, bathroom descaling & full sofa cleaning.",
     badge: "Eco-Friendly"
@@ -102,7 +100,22 @@ export default function ServiceDiscovery() {
       api.get("/services/areas").catch(() => ({ data: [] }))
     ])
       .then(([provRes, areaRes]) => {
-        const provList = provRes.data?.items || provRes.data || [];
+        let provList = provRes.data?.items || provRes.data || [];
+
+        // Attach saved categories from localStorage map
+        const catMap = JSON.parse(localStorage.getItem("provider_selected_categories_map") || "{}");
+        const activeDraft = JSON.parse(localStorage.getItem("provider_draft_profile") || "{}");
+
+        provList = provList.map((p) => {
+          let assignedCats = p.categories || [];
+          if (catMap[p.headline]) {
+            assignedCats = catMap[p.headline];
+          } else if (activeDraft.headline === p.headline && activeDraft.categories) {
+            assignedCats = activeDraft.categories;
+          }
+          return { ...p, categories: assignedCats };
+        });
+
         setProviders(provList);
 
         const apiAreas = (areaRes.data || [])
@@ -136,16 +149,16 @@ export default function ServiceDiscovery() {
     setSortBy("top_rated");
   };
 
-  // Precise category matcher
+  // Direct, reliable category matcher
   const providerMatchesCategory = (p, cat) => {
     if (!cat) return true;
 
-    // 1. Direct key match if category array exists
-    if (Array.isArray(p.categories) && p.categories.includes(cat.key)) {
-      return true;
+    // 1. Direct Category Match (provider has checked this category checkbox)
+    if (Array.isArray(p.categories) && p.categories.length > 0) {
+      return p.categories.includes(cat.key);
     }
 
-    // 2. Specialty & headline check
+    // 2. Fallback to specialties/headline only if no direct categories assigned
     const list = [];
     if (Array.isArray(p.specialties)) {
       list.push(...p.specialties.map(s => typeof s === "object" ? (s.name || s.category?.name || "") : s));
@@ -154,19 +167,10 @@ export default function ServiceDiscovery() {
       list.push(...p.services.map(s => typeof s === "object" ? s.name : s));
     }
 
-    const allText = [
-      ...list,
-      p.headline || "",
-      p.bio || ""
-    ].join(" ").toLowerCase();
+    const allText = [...list, p.headline || "", p.bio || ""].join(" ").toLowerCase();
 
-    // STRICT GUARD: If searching AC category, cockroach or pest providers must NEVER match
-    if (cat.key === "ac" && (allText.includes("cockroach") || allText.includes("pest") || allText.includes("termite"))) {
-      return false;
-    }
-
-    // STRICT GUARD: If searching Deep Cleaning category, pest/cockroach must not match
-    if (cat.key === "cleaning" && (allText.includes("cockroach") || allText.includes("pest") || allText.includes("termite"))) {
+    // Guard: Pest/cockroach never matches AC or Cleaning
+    if ((cat.key === "ac" || cat.key === "cleaning") && (allText.includes("cockroach") || allText.includes("pest"))) {
       return false;
     }
 
