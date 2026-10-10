@@ -2,14 +2,14 @@ import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { 
   MapPin, 
-  ArrowLeft,
-  Calendar,
+  ArrowLeft, 
+  Calendar, 
   Clock, 
-  Wrench,
-  CheckCircle2,
-  X,
-  Send,
-  Ban
+  Wrench, 
+  CheckCircle2, 
+  X, 
+  Send, 
+  Ban 
 } from "lucide-react";
 import api, { errorMessage } from "../api/client";
 import { useAuth } from "../context/AuthContext";
@@ -91,13 +91,13 @@ export default function ProviderPublicProfile() {
     cachedDraft = JSON.parse(localStorage.getItem("provider_draft_profile") || "{}");
   } catch (e) {}
 
-  const displayName = provider?.headline || provider?.business_name || cachedDraft.headline || provider?.full_name;
+  const displayName = provider?.headline || provider?.business_name || cachedDraft.headline || provider?.full_name || "Specialist";
   const experienceYears = provider?.years_of_experience || provider?.years_experience || cachedDraft.years_of_experience || 5;
   const workingDays = Array.isArray(provider?.working_days) && provider.working_days.length > 0
     ? provider.working_days
     : (cachedDraft.working_days || ["sat", "sun", "mon", "tue", "wed", "thu"]);
 
-  // Dynamic slot engine with double-booking prevention check
+  // Dynamic slot engine
   const fetchOrGenerateSlots = (dateString) => {
     if (!dateString) return;
     setLoadingSlots(true);
@@ -114,7 +114,6 @@ export default function ProviderPublicProfile() {
       return;
     }
 
-    // Always fetch global double-booked slots from storage
     const systemBooked = JSON.parse(localStorage.getItem("system_global_bookings") || "[]");
     const bookedAtThisDate = systemBooked
       .filter((b) => String(b.providerId) === String(id) && b.date === dateString)
@@ -123,7 +122,6 @@ export default function ProviderPublicProfile() {
     api.get(`/services/providers/${id}/available-slots?date=${dateString}`)
       .then(({ data }) => {
         if (data && data.slots) {
-          // Merge backend slots with local locks
           const merged = data.slots.map((s) => ({
             ...s,
             available: s.available && !bookedAtThisDate.includes(s.time),
@@ -185,23 +183,26 @@ export default function ProviderPublicProfile() {
     );
   }
 
+  // FIXED: No hardcoded AC fallback. Show real services or the provider's headline
   let specialties = [];
   if (Array.isArray(provider.specialties) && provider.specialties.length > 0) {
-    specialties = provider.specialties;
+    specialties = provider.specialties.map((s) => (typeof s === "object" ? s.name || s.category?.name || "" : s)).filter(Boolean);
   } else if (Array.isArray(provider.services) && provider.services.length > 0) {
-    specialties = provider.services.map((s) => (typeof s === "object" ? s.name : s));
+    specialties = provider.services.map((s) => (typeof s === "object" ? s.name : s)).filter(Boolean);
+  } else if (provider.headline) {
+    specialties = [provider.headline];
   } else {
-    specialties = ["AC Servicing", "Electrical Diagnostics", "Home Maintenance"];
+    specialties = ["General Home Maintenance"];
   }
 
+  // Areas mapping
   let areas = [];
   if (Array.isArray(provider.areas) && provider.areas.length > 0) {
-    areas = provider.areas.map((a) => (typeof a === "object" ? a.area || a.name : a));
+    areas = provider.areas.map((a) => (typeof a === "object" ? a.area || a.name : a)).filter(Boolean);
   } else {
     areas = ["Dhanmondi", "Gulshan-1", "Banani", "Uttara", "Mirpur"];
   }
 
-  // Booking submit with user-specific isolation and double-booking lock
   const handleBookingSubmit = async (e) => {
     e.preventDefault();
     if (!selectedSlot) {
@@ -209,7 +210,6 @@ export default function ProviderPublicProfile() {
       return;
     }
 
-    // Double-check prevention lock right before submit
     const systemBooked = JSON.parse(localStorage.getItem("system_global_bookings") || "[]");
     const alreadyTaken = systemBooked.some(
       (b) => String(b.providerId) === String(id) && b.date === bookingDate && b.time === selectedSlot
@@ -235,7 +235,7 @@ export default function ProviderPublicProfile() {
       customer_name: currentCustomerName,
       provider_id: provider.id,
       provider_name: displayName,
-      service_name: selectedService || specialties[0] || "General Inspection",
+      service_name: selectedService || specialties[0] || "Home Service",
       scheduled_date: bookingDate,
       scheduled_time: selectedSlot,
       amount: provider.base_hourly_rate || cachedDraft.base_hourly_rate || 2000,
@@ -245,13 +245,10 @@ export default function ProviderPublicProfile() {
     };
 
     try {
-      await api.post("/services/bookings", newBookingItem).catch(() => {
-        return api.post("/bookings", newBookingItem);
-      });
+      await api.post("/services/bookings", newBookingItem).catch(() => api.post("/bookings", newBookingItem));
     } catch (err) {
       // Backend sync fallback
     } finally {
-      // 1. Lock slot globally so NO other user can book this slot
       systemBooked.push({
         providerId: provider.id,
         date: bookingDate,
@@ -260,7 +257,6 @@ export default function ProviderPublicProfile() {
       });
       localStorage.setItem("system_global_bookings", JSON.stringify(systemBooked));
 
-      // 2. Save strictly to THIS user's log store (User isolation)
       const userLogKey = `customer_service_logs_${currentCustomerEmail}`;
       const prevUserLogs = JSON.parse(localStorage.getItem(userLogKey) || "[]");
       localStorage.setItem(userLogKey, JSON.stringify([newBookingItem, ...prevUserLogs]));
@@ -322,7 +318,7 @@ export default function ProviderPublicProfile() {
                   Company Bio & Warranty Guarantee
                 </h3>
                 <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
-                  {provider.bio || cachedDraft.bio || "Certified home service specialist equipped with industrial-grade diagnostic tools and providing full service guarantee across Dhaka."}
+                  {provider.bio || cachedDraft.bio || "Certified home service specialist equipped with professional equipment and providing full service warranty across Dhaka."}
                 </p>
               </div>
             </div>
@@ -417,7 +413,7 @@ export default function ProviderPublicProfile() {
         </div>
       </main>
 
-      {/* Dynamic Booking Form Modal with Double-Booking Prevention */}
+      {/* Dynamic Booking Modal */}
       {isBookingOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
@@ -519,7 +515,7 @@ export default function ProviderPublicProfile() {
                 <textarea
                   rows={2}
                   required
-                  placeholder="e.g. Master AC servicing required at Road 4, House 12..."
+                  placeholder="e.g. Road 4, House 12..."
                   value={bookingNotes}
                   onChange={(e) => setBookingNotes(e.target.value)}
                   className="w-full p-3 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:border-indigo-600 resize-none"
