@@ -46,7 +46,7 @@ router = APIRouter(prefix="/providers", tags=["Providers"])
 MAX_DOCUMENTS = 10
 
 
-# ============================ Own profile (provider) ======================== #
+# Own profile (provider) #
 @router.get("/me", response_model=ProviderPrivateRead)
 def my_profile(user: User = Depends(require_provider), db: Session = Depends(get_db)):
     return serialize_profile(get_profile_or_404(db, user), private=True)
@@ -93,7 +93,7 @@ def upsert_my_profile(
     return serialize_profile(get_profile_or_404(db, user), private=True)
 
 
-# ================================ Documents ================================= #
+# Documents #
 @router.post("/me/documents", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
 def upload_document(
     doc_type: DocumentType = Form(...),
@@ -146,7 +146,7 @@ def download_document(document_id: int, user: User = Depends(get_current_user), 
     return FileResponse(doc.file_path, media_type=doc.mime_type, filename=doc.original_filename)
 
 
-# ============================ Admin verification ============================ #
+# Admin verification #
 @router.get("/admin/documents/pending", response_model=list[DocumentRead])
 def pending_documents(_: User = Depends(require_admin), db: Session = Depends(get_db)):
     return db.scalars(
