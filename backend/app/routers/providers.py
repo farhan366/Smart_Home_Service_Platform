@@ -189,7 +189,7 @@ def set_contact_verification(
     return payload
 
 
-# ============================ Weekly availability =========================== #
+# Weekly availability #
 @router.get("/me/availability", response_model=list[AvailabilityRuleRead])
 def my_availability(user: User = Depends(require_provider), db: Session = Depends(get_db)):
     profile = get_profile_or_404(db, user)
@@ -214,7 +214,7 @@ def set_my_availability(
     return sorted(profile.availability_rules, key=lambda r: (r.day_of_week, r.start_time))
 
 
-# ============================== Public endpoints ============================ #
+# Public endpoints #
 @router.get("/{provider_id}", response_model=ProviderPublicRead)
 def public_profile(
     provider_id: int, viewer: User | None = Depends(get_optional_user), db: Session = Depends(get_db)
