@@ -75,7 +75,7 @@ def delete_address(address_id: int, user: User = Depends(require_customer), db: 
     was_default = address.is_default
     db.delete(address)
     db.flush()
-    if was_default:  # promote the most recent remaining address
+    if was_default:  
         successor = db.scalar(select(Address).where(Address.user_id == user.id).order_by(Address.id.desc()))
         if successor:
             successor.is_default = True
