@@ -19,7 +19,6 @@ export default function App() {
         <Route path="/providers/:id" element={<ProviderPublicProfile />} />
         <Route path="/account/addresses" element={<ProtectedRoute roles={["customer"]}><CustomerAddresses /></ProtectedRoute>} />
         <Route path="/provider/dashboard" element={<ProtectedRoute roles={["provider"]}><ProviderDashboard /></ProtectedRoute>} />
-        {/* Module 2 / 3 routes mount here: /bookings, /disputes, /admin/analytics */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
