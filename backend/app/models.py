@@ -1,15 +1,3 @@
-"""SQLAlchemy 2.0 domain models.
-
-Module 1 owns: users, addresses, service_categories, provider_* tables,
-availability_rules, service_engagement_logs.
-
-Forward-compatible tables (thin skeletons that Modules 2 & 3 extend through
-additive Alembic migrations, never by altering Module 1 columns):
-  * bookings       -> Module 2 adds quotations, payments, status history.
-  * slot_locks     -> Module 2 dynamic slot locking (already honoured by the slot generator).
-  * reviews        -> Module 3 feeds provider_profiles.avg_rating / rating_count.
-  * Dispute tickets (Module 3) simply FK to bookings.id and users.id.
-"""
 from __future__ import annotations
 
 import enum
@@ -42,10 +30,7 @@ def pg_enum(enum_cls: type[enum.Enum], name: str) -> Enum:
     """Persist enum *values* (lowercase) rather than member names."""
     return Enum(enum_cls, name=name, values_callable=lambda e: [m.value for m in e])
 
-
-# --------------------------------------------------------------------------- #
 # Enums
-# --------------------------------------------------------------------------- #
 class UserRole(str, enum.Enum):
     CUSTOMER = "customer"
     PROVIDER = "provider"
@@ -74,8 +59,6 @@ class BookingStatus(str, enum.Enum):
     CANCELLED = "cancelled"
     DISPUTED = "disputed"
 
-
-# Statuses that occupy a provider's calendar (used by the slot generator).
 ACTIVE_BOOKING_STATUSES = (
     BookingStatus.PENDING,
     BookingStatus.QUOTED,
@@ -84,9 +67,7 @@ ACTIVE_BOOKING_STATUSES = (
 )
 
 
-# --------------------------------------------------------------------------- #
 # Identity
-# --------------------------------------------------------------------------- #
 class User(TimestampMixin, Base):
     __tablename__ = "users"
 
@@ -139,9 +120,7 @@ class Address(TimestampMixin, Base):
     user: Mapped[User] = relationship(back_populates="addresses")
 
 
-# --------------------------------------------------------------------------- #
 # Service catalog
-# --------------------------------------------------------------------------- #
 class ServiceCategory(TimestampMixin, Base):
     """Self-referencing tree: Electrical (root) -> AC Servicing (child)."""
 
@@ -162,10 +141,7 @@ class ServiceCategory(TimestampMixin, Base):
         back_populates="parent", cascade="all, delete-orphan", order_by="ServiceCategory.sort_order"
     )
 
-
-# --------------------------------------------------------------------------- #
 # Provider profiling
-# --------------------------------------------------------------------------- #
 class ProviderProfile(TimestampMixin, Base):
     __tablename__ = "provider_profiles"
     __table_args__ = (
@@ -252,9 +228,7 @@ class ProviderDocument(TimestampMixin, Base):
     provider: Mapped[ProviderProfile] = relationship(back_populates="documents")
 
 
-# --------------------------------------------------------------------------- #
 # Operational calendar
-# --------------------------------------------------------------------------- #
 class AvailabilityRule(TimestampMixin, Base):
     """Weekly recurring window. day_of_week: Monday=0 ... Sunday=6."""
 
@@ -275,11 +249,7 @@ class AvailabilityRule(TimestampMixin, Base):
     is_available: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
 
     provider: Mapped[ProviderProfile] = relationship(back_populates="availability_rules")
-
-
-# --------------------------------------------------------------------------- #
-# Forward-compatible skeletons (Modules 2 & 3)
-# --------------------------------------------------------------------------- #
+ 
 class Booking(TimestampMixin, Base):
     __tablename__ = "bookings"
     __table_args__ = (
