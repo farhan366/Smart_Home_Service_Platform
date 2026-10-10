@@ -22,7 +22,8 @@ const CATEGORY_CARDS = [
   {
     key: "ac",
     name: "AC Repair & Servicing",
-    matchKeywords: ["ac", "air condition", "cooling", "ac servicing"],
+    // STRICT keywords: no standalone "servicing" word so other services don't match
+    matchKeywords: ["ac repair", "ac servicing", "air condition", "air conditioner", "cooling"],
     image: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=700&q=80",
     description: "Master jet cleaning, gas charging, circuit PCB fix & leakage repair.",
     badge: "Most Booked"
@@ -139,12 +140,12 @@ export default function ServiceDiscovery() {
   const providerMatchesCategory = (p, cat) => {
     if (!cat) return true;
 
-    // 1. Check direct categories if configured
+    // 1. Direct key match if category array exists
     if (Array.isArray(p.categories) && p.categories.includes(cat.key)) {
       return true;
     }
 
-    // 2. Check specialties and services
+    // 2. Specialty & headline check
     const list = [];
     if (Array.isArray(p.specialties)) {
       list.push(...p.specialties.map(s => typeof s === "object" ? (s.name || s.category?.name || "") : s));
@@ -153,18 +154,23 @@ export default function ServiceDiscovery() {
       list.push(...p.services.map(s => typeof s === "object" ? s.name : s));
     }
 
-    const specialtiesText = list.join(" ").toLowerCase();
-    const isSpecialtyMatch = cat.matchKeywords.some((kw) => specialtiesText.includes(kw.toLowerCase()));
-    if (isSpecialtyMatch) return true;
+    const allText = [
+      ...list,
+      p.headline || "",
+      p.bio || ""
+    ].join(" ").toLowerCase();
 
-    // 3. Fallback to Headline/Bio
-    // Priority guard: If looking at cleaning, but provider headline contains pest/cockroach, don't match cleaning
-    const generalText = `${p.headline || ""} ${p.bio || ""}`.toLowerCase();
-    if (cat.key === "cleaning" && (generalText.includes("cockroach") || generalText.includes("pest") || generalText.includes("termite"))) {
+    // STRICT GUARD: If searching AC category, cockroach or pest providers must NEVER match
+    if (cat.key === "ac" && (allText.includes("cockroach") || allText.includes("pest") || allText.includes("termite"))) {
       return false;
     }
 
-    return cat.matchKeywords.some((kw) => generalText.includes(kw.toLowerCase()));
+    // STRICT GUARD: If searching Deep Cleaning category, pest/cockroach must not match
+    if (cat.key === "cleaning" && (allText.includes("cockroach") || allText.includes("pest") || allText.includes("termite"))) {
+      return false;
+    }
+
+    return cat.matchKeywords.some((kw) => allText.includes(kw.toLowerCase()));
   };
 
   const getProviderCountForCategory = (cat) => {
