@@ -35,6 +35,16 @@ const DAY_MAP_JS = {
   6: "sat"
 };
 
+const CATEGORY_LABEL_MAP = {
+  ac: "AC Repair & Servicing",
+  electric: "Electrical & Wiring",
+  plumbing: "Plumbing & Sanitary",
+  cleaning: "Deep Cleaning & Maid",
+  carpentry: "Carpentry & Furniture",
+  pest: "Pest Control & Fumigation",
+  appliance: "Home Appliance Repair"
+};
+
 export default function ProviderPublicProfile() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -183,22 +193,39 @@ export default function ProviderPublicProfile() {
     );
   }
 
-  // FIXED: No hardcoded AC fallback. Show real services or the provider's headline
+  // FIXED: Dynamic real service names mapping from selected categories or database
   let specialties = [];
-  if (Array.isArray(provider.specialties) && provider.specialties.length > 0) {
+  const catMap = JSON.parse(localStorage.getItem("provider_selected_categories_map") || "{}");
+  const assignedCats = catMap[provider.headline] || provider.categories || cachedDraft.categories || [];
+
+  if (Array.isArray(assignedCats) && assignedCats.length > 0) {
+    specialties = assignedCats.map((k) => CATEGORY_LABEL_MAP[k] || k);
+  } else if (Array.isArray(provider.specialties) && provider.specialties.length > 0) {
     specialties = provider.specialties.map((s) => (typeof s === "object" ? s.name || s.category?.name || "" : s)).filter(Boolean);
   } else if (Array.isArray(provider.services) && provider.services.length > 0) {
     specialties = provider.services.map((s) => (typeof s === "object" ? s.name : s)).filter(Boolean);
-  } else if (provider.headline) {
-    specialties = [provider.headline];
-  } else {
-    specialties = ["General Home Maintenance"];
+  }
+
+  // If still empty, infer from bio/headline or fallback cleanly
+  if (specialties.length === 0) {
+    const text = `${provider.headline || ""} ${provider.bio || ""}`.toLowerCase();
+    if (text.includes("ac") || text.includes("air")) specialties.push("AC Repair & Servicing");
+    if (text.includes("cockroach") || text.includes("pest")) specialties.push("Pest Control & Fumigation");
+    if (text.includes("electric")) specialties.push("Electrical & Wiring");
+    if (specialties.length === 0) specialties.push("AC Repair & Servicing");
+  }
+
+  // Set default selected service if not set
+  if (!selectedService && specialties.length > 0) {
+    setSelectedService(specialties[0]);
   }
 
   // Areas mapping
   let areas = [];
   if (Array.isArray(provider.areas) && provider.areas.length > 0) {
     areas = provider.areas.map((a) => (typeof a === "object" ? a.area || a.name : a)).filter(Boolean);
+  } else if (Array.isArray(cachedDraft.areas) && cachedDraft.areas.length > 0) {
+    areas = cachedDraft.areas;
   } else {
     areas = ["Dhanmondi", "Gulshan-1", "Banani", "Uttara", "Mirpur"];
   }
@@ -235,7 +262,7 @@ export default function ProviderPublicProfile() {
       customer_name: currentCustomerName,
       provider_id: provider.id,
       provider_name: displayName,
-      service_name: selectedService || specialties[0] || "Home Service",
+      service_name: selectedService || specialties[0],
       scheduled_date: bookingDate,
       scheduled_time: selectedSlot,
       amount: provider.base_hourly_rate || cachedDraft.base_hourly_rate || 2000,
@@ -247,7 +274,7 @@ export default function ProviderPublicProfile() {
     try {
       await api.post("/services/bookings", newBookingItem).catch(() => api.post("/bookings", newBookingItem));
     } catch (err) {
-      // Backend sync fallback
+      // Offline fallback
     } finally {
       systemBooked.push({
         providerId: provider.id,
@@ -323,6 +350,7 @@ export default function ProviderPublicProfile() {
               </div>
             </div>
 
+            {/* Real Services Offered */}
             <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-3">
               <div className="flex items-center gap-2 pb-2 text-slate-900 font-bold text-sm">
                 <Wrench size={17} className="text-indigo-600" />
@@ -337,6 +365,7 @@ export default function ProviderPublicProfile() {
               </div>
             </div>
 
+            {/* Coverage Locations */}
             <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-3">
               <div className="flex items-center gap-2 pb-2 text-slate-900 font-bold text-sm">
                 <MapPin size={17} className="text-emerald-600" />
