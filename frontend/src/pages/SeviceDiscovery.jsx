@@ -4,10 +4,9 @@ import {
   RotateCcw, 
   SlidersHorizontal, 
   ArrowLeft, 
-  ArrowRight,
+  ArrowRight, 
   Sparkles, 
-  Users,
-  ShieldCheck
+  Users 
 } from "lucide-react";
 import api, { errorMessage } from "../api/client";
 import ProviderCard from "../components/ProviderCard";
@@ -18,12 +17,11 @@ const DEFAULT_AREAS = [
   "Mirpur", "Mohakhali", "Bashundhara R/A", "Badda", "Mohammadpur"
 ];
 
-// Rich Visual Categories
 const CATEGORY_CARDS = [
   {
     key: "ac",
     name: "AC Repair & Servicing",
-    matchKeywords: ["ac", "air condition", "cooling", "servicing"],
+    matchKeywords: ["ac", "air condition", "cooling", "ac servicing"],
     image: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=700&q=80",
     description: "Master jet cleaning, gas charging, circuit PCB fix & leakage repair.",
     badge: "Most Booked"
@@ -31,7 +29,7 @@ const CATEGORY_CARDS = [
   {
     key: "electric",
     name: "Electrical & Wiring",
-    matchKeywords: ["electric", "wiring", "fittings", "switch", "short circuit", "fan"],
+    matchKeywords: ["electric", "wiring", "fittings", "switch", "short circuit", "fan", "cctv", "generator", "ips"],
     image: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=700&q=80",
     description: "Circuit breaker diagnostics, DB box fittings & house wiring.",
     badge: "Certified Pros"
@@ -39,7 +37,7 @@ const CATEGORY_CARDS = [
   {
     key: "plumbing",
     name: "Plumbing & Sanitary",
-    matchKeywords: ["plumb", "pipe", "sanitary", "leak", "tap", "motor"],
+    matchKeywords: ["plumb", "pipe", "sanitary", "leak", "tap", "motor", "bathroom", "water tank", "drain"],
     image: "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=700&q=80",
     description: "Water line leakage, pump maintenance, commode & sink repair.",
     badge: "Emergency"
@@ -47,7 +45,7 @@ const CATEGORY_CARDS = [
   {
     key: "cleaning",
     name: "Deep Cleaning & Maid",
-    matchKeywords: ["clean", "wash", "maid", "sofa", "disinfection"],
+    matchKeywords: ["clean", "wash", "maid", "sofa", "disinfection", "kitchen cleaning", "deep home", "carpet", "cockroach", "pest"],
     image: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=700&q=80",
     description: "Kitchen degreasing, bathroom descaling & full sofa cleaning.",
     badge: "Eco-Friendly"
@@ -55,7 +53,7 @@ const CATEGORY_CARDS = [
   {
     key: "carpentry",
     name: "Carpentry & Furniture",
-    matchKeywords: ["carpenter", "wood", "furniture", "door", "lock", "cabinet"],
+    matchKeywords: ["carpent", "wood", "furniture", "door", "window", "modular kitchen", "lock", "cabinet"],
     image: "https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=700&q=80",
     description: "Door lock replace, wardrobe dismantling & bespoke wooden work.",
     badge: "Craftsmen"
@@ -63,7 +61,7 @@ const CATEGORY_CARDS = [
   {
     key: "appliance",
     name: "Home Appliance Repair",
-    matchKeywords: ["appliance", "fridge", "refrigerator", "washing machine", "oven", "tv"],
+    matchKeywords: ["appliance", "fridge", "refrigerator", "washing machine", "oven", "tv", "microwave"],
     image: "https://images.unsplash.com/photo-1585338107529-13afc5f02586?auto=format&fit=crop&w=700&q=80",
     description: "Refrigerator gas leakage, washing motor & microwave servicing.",
     badge: "Warranty Backed"
@@ -76,9 +74,8 @@ export default function ServiceDiscovery() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Filter States
   const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState(null); // null means showing visual category grid
+  const [activeCategory, setActiveCategory] = useState(null);
   const [selectedArea, setSelectedArea] = useState("");
   const [minRating, setMinRating] = useState("");
   const [minPrice, setMinPrice] = useState("");
@@ -129,39 +126,46 @@ export default function ServiceDiscovery() {
     setSortBy("top_rated");
   };
 
-  // Helper function to check if a provider serves a specific category
+  // Direct category key match first, fallback to keywords
   const providerMatchesCategory = (p, cat) => {
     if (!cat) return true;
-    const pSpecialties = Array.isArray(p.specialties) ? p.specialties : [];
-    const pServices = Array.isArray(p.services)
-      ? p.services.map((s) => (typeof s === "object" ? s.name : s))
-      : [];
-    const pBio = p.bio || "";
-    const pHeadline = p.headline || "";
 
-    const combinedText = [...pSpecialties, ...pServices, pBio, pHeadline]
-      .join(" ")
-      .toLowerCase();
+    // 1. Direct match with provider's selected categories
+    if (Array.isArray(p.categories) && p.categories.includes(cat.key)) {
+      return true;
+    }
 
-    return cat.matchKeywords.some((kw) => combinedText.includes(kw));
+    // 2. Specialty & headline keyword check
+    const list = [];
+    if (Array.isArray(p.specialties)) {
+      list.push(...p.specialties.map(s => typeof s === "object" ? (s.name || s.category?.name || "") : s));
+    }
+    if (Array.isArray(p.services)) {
+      list.push(...p.services.map(s => typeof s === "object" ? s.name : s));
+    }
+
+    const providerTokens = [
+      ...list,
+      p.headline || "",
+      p.bio || "",
+      p.business_name || ""
+    ].join(" ").toLowerCase();
+
+    return cat.matchKeywords.some((kw) => providerTokens.includes(kw.toLowerCase()));
   };
 
-  // Category provider count counter
   const getProviderCountForCategory = (cat) => {
     return providers.filter((p) => providerMatchesCategory(p, cat)).length;
   };
 
-  // Filtered providers when inside a category or searching
   const filteredProviders = useMemo(() => {
     if (!activeCategory && !search.trim()) return [];
 
     return providers.filter((p) => {
-      // 1. Category Match
       if (activeCategory && !providerMatchesCategory(p, activeCategory)) {
         return false;
       }
 
-      // 2. Text Search (name, headline, bio)
       if (search.trim()) {
         const q = search.toLowerCase();
         const nameMatch = (p.full_name || "").toLowerCase().includes(q);
@@ -170,7 +174,6 @@ export default function ServiceDiscovery() {
         if (!nameMatch && !headMatch && !bioMatch) return false;
       }
 
-      // 3. Area / Thana Filter
       if (selectedArea) {
         const pAreas = Array.isArray(p.areas)
           ? p.areas.map((a) => (typeof a === "object" ? a.area || a.name : a))
@@ -180,17 +183,14 @@ export default function ServiceDiscovery() {
         }
       }
 
-      // 4. Rating Filter
       if (minRating && Number(p.avg_rating || 0) < Number(minRating)) {
         return false;
       }
 
-      // 5. Price Min/Max
       const rate = Number(p.base_hourly_rate || 0);
       if (minPrice && rate < Number(minPrice)) return false;
       if (maxPrice && rate > Number(maxPrice)) return false;
 
-      // 6. Verified Only
       if (verifiedOnly && !p.is_contact_verified && !p.is_credential_verified) {
         return false;
       }
@@ -206,7 +206,6 @@ export default function ServiceDiscovery() {
 
   return (
     <div className="min-h-screen bg-slate-50/70 pb-20 font-sans">
-      {/* Top Banner */}
       <section className="bg-white border-b border-slate-200/80 pt-10 pb-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto space-y-4">
           <div className="space-y-1">
@@ -221,7 +220,6 @@ export default function ServiceDiscovery() {
             </p>
           </div>
 
-          {/* Search Bar */}
           <div className="pt-2 flex flex-col sm:flex-row gap-3 items-center">
             <div className="relative flex-1 w-full">
               <Search className="absolute left-3.5 top-3.5 text-slate-400" size={18} />
@@ -248,7 +246,6 @@ export default function ServiceDiscovery() {
         </div>
       </section>
 
-      {/* Main Layout: Filters on the Left, Categories or Providers on the Right */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
         {error && (
           <div className="mb-6">
@@ -258,7 +255,7 @@ export default function ServiceDiscovery() {
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           
-          {/* Left Filter Sidebar */}
+          {/* Filters */}
           <div className="space-y-6">
             <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-5">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -274,7 +271,6 @@ export default function ServiceDiscovery() {
                 </button>
               </div>
 
-              {/* Service Category Selector in Sidebar */}
               <div className="space-y-1.5">
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   Service Category
@@ -297,7 +293,6 @@ export default function ServiceDiscovery() {
                 </select>
               </div>
 
-              {/* Area / Thana */}
               <div className="space-y-1.5">
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   Area / Thana
@@ -316,7 +311,6 @@ export default function ServiceDiscovery() {
                 </select>
               </div>
 
-              {/* Minimum Rating */}
               <div className="space-y-1.5">
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   Minimum Rating
@@ -333,7 +327,6 @@ export default function ServiceDiscovery() {
                 </select>
               </div>
 
-              {/* Price Range */}
               <div className="space-y-1.5">
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   Hourly Rate (৳)
@@ -357,7 +350,6 @@ export default function ServiceDiscovery() {
                 </div>
               </div>
 
-              {/* Verified Only */}
               <div className="pt-2 border-t border-slate-100">
                 <label className="flex items-center gap-2.5 cursor-pointer select-none">
                   <input
@@ -372,10 +364,8 @@ export default function ServiceDiscovery() {
             </div>
           </div>
 
-          {/* Right Content Area: Either Beautiful Categories OR Providers inside Selected Category */}
+          {/* Right Section */}
           <div className="lg:col-span-3 space-y-4">
-            
-            {/* VIEW 1: All Categories Overview (When no category is selected & not searching) */}
             {!activeCategory && !search.trim() ? (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -401,7 +391,6 @@ export default function ServiceDiscovery() {
                         onClick={() => setActiveCategory(cat)}
                         className="group relative bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-xs hover:shadow-xl hover:border-indigo-400 hover:-translate-y-1 transition-all duration-200 cursor-pointer flex flex-col"
                       >
-                        {/* Image Banner */}
                         <div className="h-40 w-full overflow-hidden relative bg-slate-100">
                           <img
                             src={cat.image}
@@ -410,12 +399,10 @@ export default function ServiceDiscovery() {
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent"></div>
                           
-                          {/* Top Badge */}
                           <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-xs text-slate-900 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full shadow-xs">
                             {cat.badge}
                           </span>
 
-                          {/* Category Title inside banner */}
                           <div className="absolute bottom-3 left-3 right-3">
                             <h3 className="text-white font-extrabold text-base leading-tight drop-shadow-xs">
                               {cat.name}
@@ -423,7 +410,6 @@ export default function ServiceDiscovery() {
                           </div>
                         </div>
 
-                        {/* Content */}
                         <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                           <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
                             {cat.description}
@@ -445,7 +431,6 @@ export default function ServiceDiscovery() {
                 </div>
               </div>
             ) : (
-              /* VIEW 2: Providers inside the clicked Category (or Search Results) */
               <div className="space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs">
                   <div className="flex items-center gap-3">
@@ -456,7 +441,6 @@ export default function ServiceDiscovery() {
                         setSearch("");
                       }}
                       className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
-                      title="Back to all categories"
                     >
                       <ArrowLeft size={16} />
                     </button>
@@ -476,7 +460,7 @@ export default function ServiceDiscovery() {
                       setActiveCategory(null);
                       setSearch("");
                     }}
-                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 self-start sm:self-auto cursor-pointer"
+                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
                   >
                     View All Categories ✕
                   </button>
@@ -507,9 +491,7 @@ export default function ServiceDiscovery() {
                 )}
               </div>
             )}
-
           </div>
-
         </div>
       </main>
     </div>
