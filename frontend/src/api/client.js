@@ -3,9 +3,6 @@ import axios from "axios";
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1";
 const ACCESS_KEY = "sh_access";
 const REFRESH_KEY = "sh_refresh";
-
-// NOTE: localStorage is simple but readable by injected scripts (XSS). For stricter
-// deployments move the refresh token to an HttpOnly, SameSite cookie.
 export const tokenStore = {
   get access() { return localStorage.getItem(ACCESS_KEY); },
   get refresh() { return localStorage.getItem(REFRESH_KEY); },
@@ -28,7 +25,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-let refreshing = null; // single in-flight refresh shared by all concurrent 401s
+let refreshing = null;
 
 api.interceptors.response.use(
   (res) => res,
