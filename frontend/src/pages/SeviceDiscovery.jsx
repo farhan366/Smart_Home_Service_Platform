@@ -17,6 +17,7 @@ const DEFAULT_AREAS = [
   "Mirpur", "Mohakhali", "Bashundhara R/A", "Badda", "Mohammadpur"
 ];
 
+// Rich Visual Categories including dedicated Pest Control
 const CATEGORY_CARDS = [
   {
     key: "ac",
@@ -45,7 +46,7 @@ const CATEGORY_CARDS = [
   {
     key: "cleaning",
     name: "Deep Cleaning & Maid",
-    matchKeywords: ["clean", "wash", "maid", "sofa", "disinfection", "kitchen cleaning", "deep home", "carpet", "cockroach", "pest"],
+    matchKeywords: ["deep home cleaning", "sofa & carpet", "kitchen cleaning", "water tank cleaning", "maid", "wash", "floor cleaning"],
     image: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=700&q=80",
     description: "Kitchen degreasing, bathroom descaling & full sofa cleaning.",
     badge: "Eco-Friendly"
@@ -57,6 +58,14 @@ const CATEGORY_CARDS = [
     image: "https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=700&q=80",
     description: "Door lock replace, wardrobe dismantling & bespoke wooden work.",
     badge: "Craftsmen"
+  },
+  {
+    key: "pest",
+    name: "Pest Control & Fumigation",
+    matchKeywords: ["pest", "cockroach", "termite", "rodent", "ant", "bedbug", "fumigation", "insect"],
+    image: "https://images.unsplash.com/photo-1587393855524-087f83d95bc9?auto=format&fit=crop&w=700&q=80",
+    description: "Cockroach geling, anti-termite piping & commercial rodent eradication.",
+    badge: "Certified Pros"
   },
   {
     key: "appliance",
@@ -126,16 +135,16 @@ export default function ServiceDiscovery() {
     setSortBy("top_rated");
   };
 
-  // Direct category key match first, fallback to keywords
+  // Precise category matcher
   const providerMatchesCategory = (p, cat) => {
     if (!cat) return true;
 
-    // 1. Direct match with provider's selected categories
+    // 1. Check direct categories if configured
     if (Array.isArray(p.categories) && p.categories.includes(cat.key)) {
       return true;
     }
 
-    // 2. Specialty & headline keyword check
+    // 2. Check specialties and services
     const list = [];
     if (Array.isArray(p.specialties)) {
       list.push(...p.specialties.map(s => typeof s === "object" ? (s.name || s.category?.name || "") : s));
@@ -144,14 +153,18 @@ export default function ServiceDiscovery() {
       list.push(...p.services.map(s => typeof s === "object" ? s.name : s));
     }
 
-    const providerTokens = [
-      ...list,
-      p.headline || "",
-      p.bio || "",
-      p.business_name || ""
-    ].join(" ").toLowerCase();
+    const specialtiesText = list.join(" ").toLowerCase();
+    const isSpecialtyMatch = cat.matchKeywords.some((kw) => specialtiesText.includes(kw.toLowerCase()));
+    if (isSpecialtyMatch) return true;
 
-    return cat.matchKeywords.some((kw) => providerTokens.includes(kw.toLowerCase()));
+    // 3. Fallback to Headline/Bio
+    // Priority guard: If looking at cleaning, but provider headline contains pest/cockroach, don't match cleaning
+    const generalText = `${p.headline || ""} ${p.bio || ""}`.toLowerCase();
+    if (cat.key === "cleaning" && (generalText.includes("cockroach") || generalText.includes("pest") || generalText.includes("termite"))) {
+      return false;
+    }
+
+    return cat.matchKeywords.some((kw) => generalText.includes(kw.toLowerCase()));
   };
 
   const getProviderCountForCategory = (cat) => {
