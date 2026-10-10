@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { 
   Building2, 
   MapPin, 
@@ -7,8 +8,9 @@ import {
   Banknote, 
   Layers, 
   Save, 
-  CheckCircle2, 
-  AlertCircle 
+  ExternalLink,
+  CheckCircle2,
+  AlertCircle
 } from "lucide-react";
 import api, { errorMessage } from "../api/client";
 import { Alert } from "../components/ui";
@@ -40,6 +42,7 @@ const WEEK_DAYS = [
 ];
 
 export default function ProviderDashboard() {
+  const [providerId, setProviderId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState({ type: "", text: "" });
@@ -64,6 +67,7 @@ export default function ProviderDashboard() {
     api.get("/providers/me")
       .then(({ data }) => {
         if (data) {
+          if (data.id) setProviderId(data.id);
           if (data.headline) setHeadline(data.headline);
           if (data.bio) setBio(data.bio);
           if (data.years_experience || data.years_of_experience) {
@@ -76,17 +80,23 @@ export default function ProviderDashboard() {
           }
           if (data.start_time) setStartTime(data.start_time);
           if (data.end_time) setEndTime(data.end_time);
-          if (Array.isArray(data.categories) && data.categories.length > 0) {
+
+          // Category map restore
+          const catMap = JSON.parse(localStorage.getItem("provider_selected_categories_map") || "{}");
+          if (data.headline && catMap[data.headline]) {
+            setSelectedCategories(catMap[data.headline]);
+          } else if (Array.isArray(data.categories) && data.categories.length > 0) {
             setSelectedCategories(data.categories);
           }
+
           if (Array.isArray(data.areas) && data.areas.length > 0) {
             setSelectedAreas(data.areas.map(a => typeof a === "object" ? a.area || a.name : a));
           }
         }
       })
       .catch(() => {
-        // Fallback to active session profile
         const draft = JSON.parse(localStorage.getItem("provider_draft_profile") || "{}");
+        if (draft.id) setProviderId(draft.id);
         if (draft.headline) setHeadline(draft.headline);
         if (draft.bio) setBio(draft.bio);
         if (draft.categories) setSelectedCategories(draft.categories);
@@ -95,10 +105,15 @@ export default function ProviderDashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  const toggleCategory = (catKey) => {
-    setSelectedCategories((prev) =>
-      prev.includes(catKey) ? prev.filter((k) => k !== catKey) : [...prev, catKey]
-    );
+  // Multi-select toggle without label collision
+  const handleCategoryToggle = (key) => {
+    setSelectedCategories((prev) => {
+      if (prev.includes(key)) {
+        return prev.filter((item) => item !== key);
+      } else {
+        return [...prev, key];
+      }
+    });
   };
 
   const toggleArea = (area) => {
@@ -138,19 +153,18 @@ export default function ProviderDashboard() {
 
     try {
       await api.put("/providers/me", payload).catch(() => api.post("/providers", payload));
-      
-      // Save global dictionary of provider categories so ServiceDiscovery can read it seamlessly
-      const allSavedCategories = JSON.parse(localStorage.getItem("provider_selected_categories_map") || "{}");
-      allSavedCategories[headline || "default"] = selectedCategories;
-      localStorage.setItem("provider_selected_categories_map", JSON.stringify(allSavedCategories));
-      localStorage.setItem("provider_draft_profile", JSON.stringify(payload));
+
+      const catMap = JSON.parse(localStorage.getItem("provider_selected_categories_map") || "{}");
+      catMap[headline || "default"] = selectedCategories;
+      localStorage.setItem("provider_selected_categories_map", JSON.stringify(catMap));
+      localStorage.setItem("provider_draft_profile", JSON.stringify({ ...payload, id: providerId || 1 }));
 
       setStatus({ type: "success", text: "Profile & selected service categories saved successfully!" });
     } catch (err) {
-      const allSavedCategories = JSON.parse(localStorage.getItem("provider_selected_categories_map") || "{}");
-      allSavedCategories[headline || "default"] = selectedCategories;
-      localStorage.setItem("provider_selected_categories_map", JSON.stringify(allSavedCategories));
-      localStorage.setItem("provider_draft_profile", JSON.stringify(payload));
+      const catMap = JSON.parse(localStorage.getItem("provider_selected_categories_map") || "{}");
+      catMap[headline || "default"] = selectedCategories;
+      localStorage.setItem("provider_selected_categories_map", JSON.stringify(catMap));
+      localStorage.setItem("provider_draft_profile", JSON.stringify({ ...payload, id: providerId || 1 }));
 
       setStatus({ type: "success", text: "Profile & service categories saved successfully!" });
     } finally {
@@ -169,10 +183,22 @@ export default function ProviderDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50/70 pb-20 font-sans">
+      {/* Top Bar with "View as Customer" Button */}
       <div className="bg-white border-b border-slate-200">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Provider Profile Setup</h1>
-          <p className="text-xs text-slate-500 mt-1">Configure your business identity, service categories, and operational shifts.</p>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">Provider Profile Setup</h1>
+            <p className="text-xs text-slate-500 mt-0.5">Configure your business identity, service categories, and operational shifts.</p>
+          </div>
+          {providerId && (
+            <Link
+              to={`/providers/${providerId}`}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-all shadow-xs"
+            >
+              <ExternalLink size={14} className="text-indigo-600" />
+              <span>View as Customer</span>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -182,7 +208,7 @@ export default function ProviderDashboard() {
             <Alert kind={status.type}>{status.text}</Alert>
           )}
 
-          {/* 1. PRIMARY SERVICE CATEGORIES (CHECKBOXES) */}
+          {/* 1. Multi-Select Categories */}
           <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs space-y-4">
             <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
               <div>
@@ -191,7 +217,7 @@ export default function ProviderDashboard() {
                   <span>Primary Service Categories (Tick Which Services You Provide)</span>
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Customers browsing these categories will directly see your service profile.
+                  You can select multiple categories. Customers in these categories will discover you.
                 </p>
               </div>
               <span className="text-xs font-extrabold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
@@ -203,23 +229,23 @@ export default function ProviderDashboard() {
               {ALL_CATEGORIES.map((cat) => {
                 const isChecked = selectedCategories.includes(cat.key);
                 return (
-                  <label
+                  <button
                     key={cat.key}
-                    onClick={() => toggleCategory(cat.key)}
-                    className={`flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer select-none transition-all ${
+                    type="button"
+                    onClick={() => handleCategoryToggle(cat.key)}
+                    className={`flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
                       isChecked
                         ? "bg-indigo-50/90 border-indigo-600 text-indigo-950 font-extrabold shadow-xs ring-1 ring-indigo-500/20"
                         : "bg-slate-50/60 border-slate-200 text-slate-700 hover:bg-slate-100"
                     }`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => {}}
-                      className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 pointer-events-none"
-                    />
-                    <span className="text-xs">{cat.label}</span>
-                  </label>
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                      isChecked ? "bg-indigo-600 border-indigo-600 text-white" : "border-slate-300 bg-white"
+                    }`}>
+                      {isChecked && <CheckCircle2 size={12} />}
+                    </div>
+                    <span className="text-xs font-semibold">{cat.label}</span>
+                  </button>
                 );
               })}
             </div>
