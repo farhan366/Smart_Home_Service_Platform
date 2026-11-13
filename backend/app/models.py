@@ -21,6 +21,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import ENUM as PGEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin
@@ -29,6 +30,12 @@ from app.db.base import Base, TimestampMixin
 def pg_enum(enum_cls: type[enum.Enum], name: str) -> Enum:
     """Persist enum *values* (lowercase) rather than member names."""
     return Enum(enum_cls, name=name, values_callable=lambda e: [m.value for m in e])
+
+def pg_enum_shared(enum_cls: type[enum.Enum], name: str) -> Enum:
+    """Reference an enum type that another table already creates. create_type=False stops Alembic from
+    emitting a second CREATE TYPE (which fails on PostgreSQL with 'type already exists')."""
+    return PGEnum(enum_cls, name=name, values_callable=lambda e: [m.value for m in e], create_type=False)
+
 
 # Enums
 class UserRole(str, enum.Enum):
@@ -58,6 +65,19 @@ class BookingStatus(str, enum.Enum):
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     DISPUTED = "disputed"
+
+class QuotationStatus(str, enum.Enum):
+    SUBMITTED = "submitted"   # awaiting the customer's decision
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"   # superseded by a revised quotation, or the provider backed out
+    EXPIRED = "expired"
+
+
+class QuoteItemType(str, enum.Enum):
+    LABOR = "labor"
+    MATERIAL = "material"
+
 
 ACTIVE_BOOKING_STATUSES = (
     BookingStatus.PENDING,
@@ -251,10 +271,15 @@ class AvailabilityRule(TimestampMixin, Base):
     provider: Mapped[ProviderProfile] = relationship(back_populates="availability_rules")
  
 class Booking(TimestampMixin, Base):
+    """Lifecycle: pending -> quoted -> confirmed -> in_progress -> completed
+    (cancelled from pending/quoted/confirmed). Transitions are enforced in app.services.booking_service."""
+
     __tablename__ = "bookings"
     __table_args__ = (
         CheckConstraint("scheduled_end > scheduled_start", name="ck_booking_time_order"),
+        CheckConstraint("complexity BETWEEN 1 AND 3", name="ck_booking_complexity"),
         Index("ix_booking_provider_window", "provider_id", "scheduled_start", "scheduled_end"),
+        Index("ix_booking_provider_status", "provider_id", "status"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -267,8 +292,106 @@ class Booking(TimestampMixin, Base):
     status: Mapped[BookingStatus] = mapped_column(
         pg_enum(BookingStatus, "booking_status"), default=BookingStatus.PENDING, index=True
     )
-    notes: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)  # the customer's task / problem description
     quoted_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+
+    # --- Module 2 additions ---
+    complexity: Mapped[int] = mapped_column(SmallInteger, default=2, server_default=text("2"))  # 1 simple .. 3 complex
+    # Snapshot of the execution address so history survives edits/deletes of the saved address.
+    service_area: Mapped[str | None] = mapped_column(String(80), index=True)
+    address_text: Mapped[str | None] = mapped_column(String(500))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    cancelled_by: Mapped[str | None] = mapped_column(String(20))  # customer | provider | system
+    cancel_reason: Mapped[str | None] = mapped_column(String(500))
+    # Settlement, frozen at completion so later commission changes never rewrite history.
+    final_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    platform_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    net_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+
+    customer: Mapped[User] = relationship(foreign_keys=[customer_id])
+    provider: Mapped[ProviderProfile] = relationship(foreign_keys=[provider_id])
+    category: Mapped[ServiceCategory | None] = relationship(foreign_keys=[category_id])
+    quotations: Mapped[list[Quotation]] = relationship(
+        back_populates="booking", cascade="all, delete-orphan", order_by="Quotation.version"
+    )
+    events: Mapped[list[BookingStatusEvent]] = relationship(
+        back_populates="booking", cascade="all, delete-orphan", order_by="BookingStatusEvent.id"
+    )
+
+
+class BookingStatusEvent(Base):
+    """Append-only audit trail; drives the status timeline shown to both sides."""
+
+    __tablename__ = "booking_status_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    booking_id: Mapped[int] = mapped_column(ForeignKey("bookings.id", ondelete="CASCADE"), index=True)
+    from_status: Mapped[BookingStatus | None] = mapped_column(pg_enum_shared(BookingStatus, "booking_status"))
+    to_status: Mapped[BookingStatus] = mapped_column(pg_enum_shared(BookingStatus, "booking_status"))
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    actor_role: Mapped[str] = mapped_column(String(20))  # customer | provider | system
+    note: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    booking: Mapped[Booking] = relationship(back_populates="events")
+
+
+class Quotation(TimestampMixin, Base):
+    """An itemised labour + material estimate. A booking can have several versions (revisions);
+    at most one is 'submitted' at a time."""
+
+    __tablename__ = "quotations"
+    __table_args__ = (
+        UniqueConstraint("booking_id", "version", name="uq_quotation_booking_version"),
+        CheckConstraint("total >= 0", name="ck_quotation_total"),
+        Index(
+            "uq_quotation_one_open_per_booking",
+            "booking_id",
+            unique=True,
+            postgresql_where=text("status = 'submitted'"),
+            sqlite_where=text("status = 'submitted'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    booking_id: Mapped[int] = mapped_column(ForeignKey("bookings.id", ondelete="CASCADE"), index=True)
+    provider_id: Mapped[int] = mapped_column(ForeignKey("provider_profiles.id", ondelete="RESTRICT"), index=True)
+    version: Mapped[int] = mapped_column(SmallInteger, default=1)
+    status: Mapped[QuotationStatus] = mapped_column(
+        pg_enum(QuotationStatus, "quotation_status"), default=QuotationStatus.SUBMITTED, index=True
+    )
+    labor_total: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+    material_total: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+    total: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+    note: Mapped[str | None] = mapped_column(String(1000))
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejection_reason: Mapped[str | None] = mapped_column(String(500))
+
+    booking: Mapped[Booking] = relationship(back_populates="quotations")
+    items: Mapped[list[QuotationItem]] = relationship(
+        back_populates="quotation", cascade="all, delete-orphan", order_by="QuotationItem.id"
+    )
+
+
+class QuotationItem(Base):
+    __tablename__ = "quotation_items"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_quote_item_qty"),
+        CheckConstraint("unit_price >= 0", name="ck_quote_item_price"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    quotation_id: Mapped[int] = mapped_column(ForeignKey("quotations.id", ondelete="CASCADE"), index=True)
+    item_type: Mapped[QuoteItemType] = mapped_column(pg_enum(QuoteItemType, "quote_item_type"))
+    description: Mapped[str] = mapped_column(String(200))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(8, 2))
+    unit: Mapped[str] = mapped_column(String(20), default="pcs")
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    line_total: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+
+    quotation: Mapped[Quotation] = relationship(back_populates="items")
 
 
 class SlotLock(Base):
