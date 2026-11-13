@@ -1,13 +1,6 @@
-"""Technician matching engine.
-
-Pipeline: eligibility (specialty + served area within radius + currently bookable) -> five 0..1 indices
-(proximity, rating, capability, price, availability) -> complexity-weighted score -> ranked top-N with
-human-readable reasons. The maths lives in services/scoring.py and services/geo.py.
-"""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
