@@ -1,10 +1,10 @@
+"""Technician workspace: incoming requests, quotations, daily schedule, job progress and revenue."""
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-"""Technician workspace: incoming requests, quotations, daily schedule, job progress and revenue."""
 from app.core.config import settings
 from app.core.deps import require_provider
 from app.db.session import get_db
