@@ -1,5 +1,3 @@
-"""Technician revenue analytics. Net = gross (accepted quotation) minus the platform commission frozen
-on each booking at completion time."""
 from __future__ import annotations
 
 from collections import defaultdict
