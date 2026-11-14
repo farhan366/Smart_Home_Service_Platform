@@ -41,7 +41,6 @@ _ALIASES = {
     "puran dhaka": "old dhaka",
 }
 
-
 def normalize_area(name: str | None) -> str:
     if not name:
         return ""
