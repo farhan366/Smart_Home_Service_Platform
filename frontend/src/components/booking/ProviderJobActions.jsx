@@ -4,7 +4,6 @@ import api, { errorMessage } from "../../api/client";
 import { Alert } from "../ui";
 import QuoteBuilder from "./QuoteBuilder";
 
-/** Every technician action on one booking. Which buttons appear is decided by the server (`allowed_actions`). */
 export default function ProviderJobActions({ booking, defaultRate, onChanged }) {
   const [mode, setMode] = useState(null); // "quote" | "decline" | "cancel"
   const [reason, setReason] = useState("");
