@@ -1,4 +1,3 @@
-"""Technician workspace: incoming requests, quotations, daily schedule, job progress and revenue."""
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
