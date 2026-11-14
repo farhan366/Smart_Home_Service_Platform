@@ -5,7 +5,6 @@ import StatusBadge from "./StatusBadge";
 import QuotationPanel from "./QuotationPanel";
 import ProviderJobActions from "./ProviderJobActions";
 
-/** One job as the technician sees it: the task description, when/where, the quote, and the next actions. */
 export default function ProviderJobCard({ booking: b, defaultRate, onChanged, compact = false }) {
   const revealed = ["confirmed", "in_progress", "completed"].includes(b.status);
   return (
