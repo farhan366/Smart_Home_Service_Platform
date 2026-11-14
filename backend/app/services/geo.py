@@ -2,7 +2,6 @@ from __future__ import annotations
 import math
 import re
 
-# (latitude, longitude): approximate neighbourhood centres, good enough for ranking, not for navigation.
 AREA_CENTROIDS: dict[str, tuple[float, float]] = {
     "dhanmondi": (23.7461, 90.3742),
     "lalmatia": (23.7556, 90.3665),
